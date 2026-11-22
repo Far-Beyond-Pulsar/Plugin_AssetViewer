@@ -312,6 +312,7 @@ fn render_3d_table(cx: &mut App, file_name: &str, ew: &Entity<AssetViewerPanel>)
                         .gap_1()
                         .child(div().text_sm().child(file_name.to_string())),
                 ))
+                .children(super::materials::settings_section(cx, ew))
                 .children(super::materials::materials_section(cx, ew))
                 .child(section(
                     cx,
