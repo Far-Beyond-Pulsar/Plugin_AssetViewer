@@ -1,9 +1,14 @@
-//! Default material assignment for native `.mesh` assets.
+//! Default material assignment and asset settings for native `.mesh` assets.
 //!
 //! The viewer edits the asset's own per-slot default materials (stored in the
 //! `.mesh` metadata by `meshes_component::mesh_cache::set_default_materials`).
 //! Placed `StaticMeshComponent`s inherit them for any slot they do not
 //! override, so a mesh can ship with its materials already applied.
+//!
+//! It also edits the asset's settings (virtual geometry, stored by
+//! `meshes_component::mesh_cache::set_asset_settings`), which a
+//! `StaticMeshComponent` copies when it is placed for the mesh and then keeps
+//! as its own per-instance properties.
 
 use gpui::*;
 use ui_common::asset_picker::{AssetPickedEvent, AssetPicker, AssetQuery};
@@ -21,6 +26,8 @@ pub struct MaterialSlotRow {
 pub struct MeshMaterials {
     pub rows: Vec<MaterialSlotRow>,
     pub apply_all: Entity<AssetPicker>,
+    /// The asset's settings, as stored in the open `.mesh`.
+    pub settings: meshes_component::mesh_cache::MeshAssetSettings,
 }
 
 fn material_queries() -> Vec<AssetQuery> {
@@ -156,7 +163,11 @@ impl AssetViewerPanel {
                 }
             },
         ));
-        self.mesh_materials = Some(MeshMaterials { rows, apply_all });
+        self.mesh_materials = Some(MeshMaterials {
+            rows,
+            apply_all,
+            settings: asset.settings,
+        });
         self.refresh_slot_colors(cx);
     }
 
@@ -305,6 +316,28 @@ impl AssetViewerPanel {
         cx.notify();
     }
 
+    /// Set the asset's virtual-geometry default and save it into the `.mesh`.
+    /// Meshes placed from now on take it; placed ones keep their own value.
+    fn set_virtual_geometry(&mut self, enabled: bool, cx: &mut Context<Self>) {
+        let (Some(path), Some(materials)) =
+            (self.current_path.as_ref(), self.mesh_materials.as_mut())
+        else {
+            return;
+        };
+        if materials.settings.virtual_geometry == enabled {
+            return;
+        }
+        let settings = meshes_component::mesh_cache::MeshAssetSettings {
+            virtual_geometry: enabled,
+            ..materials.settings
+        };
+        match meshes_component::mesh_cache::set_asset_settings(path, settings) {
+            Ok(()) => materials.settings = settings,
+            Err(error) => log::error!("Could not save mesh settings for {:?}: {error}", path),
+        }
+        cx.notify();
+    }
+
     /// Persist the assignments into the `.mesh`; placed meshes are told to
     /// reload by `set_default_materials`' asset-update event.
     fn save_mesh_materials(&self) {
@@ -349,6 +382,57 @@ fn file_label(path: &str, empty: &str) -> String {
         .and_then(|name| name.to_str())
         .unwrap_or(path)
         .to_owned()
+}
+
+/// The "Mesh Settings" section of the properties panel: the asset-level
+/// defaults placed meshes are seeded from. `None` for non-`.mesh` files.
+pub fn settings_section(cx: &App, panel: &Entity<AssetViewerPanel>) -> Option<AnyElement> {
+    use rust_i18n::t;
+    use ui::switch::Switch;
+    use ui::{h_flex, v_flex, ActiveTheme};
+
+    let materials = panel.read(cx).mesh_materials.as_ref()?;
+    let muted = cx.theme().muted_foreground;
+    let panel = panel.clone();
+    Some(
+        v_flex()
+            .gap_2()
+            .child(
+                div()
+                    .text_xs()
+                    .text_color(muted)
+                    .child(t!("AssetViewer.MeshSettings").to_string()),
+            )
+            .child(
+                h_flex()
+                    .w_full()
+                    .justify_between()
+                    .items_center()
+                    .gap_2()
+                    .child(
+                        div()
+                            .text_xs()
+                            .child(t!("AssetViewer.VirtualGeometry").to_string()),
+                    )
+                    .child(
+                        Switch::new("mesh-virtual-geometry")
+                            .checked(materials.settings.virtual_geometry)
+                            .on_click(move |checked: &bool, _window, cx| {
+                                let checked = *checked;
+                                panel.update(cx, |panel, cx| {
+                                    panel.set_virtual_geometry(checked, cx)
+                                });
+                            }),
+                    ),
+            )
+            .child(
+                div()
+                    .text_xs()
+                    .text_color(muted)
+                    .child(t!("AssetViewer.VirtualGeometryHint").to_string()),
+            )
+            .into_any_element(),
+    )
 }
 
 /// The "Default Materials" section of the properties panel: an

@@ -64,6 +64,9 @@ AssetViewer.DefaultMaterials: Default Materials
 AssetViewer.ApplyToAllSlots: Apply to all slots
 AssetViewer.MaterialsHint: Placed meshes use these unless a component overrides a slot.
 AssetViewer.NoMaterial: Imported material
+AssetViewer.MeshSettings: Mesh Settings
+AssetViewer.VirtualGeometry: Virtual Geometry
+AssetViewer.VirtualGeometryHint: Meshes placed from now on start with this; each placed mesh can change it.
 AssetViewer.Mode.Lit: "Lit"
 AssetViewer.Mode.Unlit: "Unlit"
 AssetViewer.Mode.Wireframe: "Wireframe"
