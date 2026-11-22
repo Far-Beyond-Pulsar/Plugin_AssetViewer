@@ -67,6 +67,9 @@ AssetViewer.NoMaterial: Imported material
 AssetViewer.MeshSettings: Mesh Settings
 AssetViewer.VirtualGeometry: Virtual Geometry
 AssetViewer.VirtualGeometryHint: Meshes placed from now on start with this; each placed mesh can change it.
+AssetViewer.VgFallbackError: Fallback Error
+AssetViewer.VgFallbackErrorProject: Project default
+AssetViewer.VgFallbackErrorHint: "How far, as a share of the mesh's radius, its virtual-geometry fallback may be from its surface: only the fallback stays in video memory beside the cluster pages, drawn until they are ready and by shadows and rays. Placed meshes follow it."
 AssetViewer.Mode.Lit: "Lit"
 AssetViewer.Mode.Unlit: "Unlit"
 AssetViewer.Mode.Wireframe: "Wireframe"
