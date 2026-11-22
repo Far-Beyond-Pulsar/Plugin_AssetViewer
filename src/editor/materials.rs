@@ -5,7 +5,8 @@
 //! Placed `StaticMeshComponent`s inherit them for any slot they do not
 //! override, so a mesh can ship with its materials already applied.
 //!
-//! It also edits the asset's settings (virtual geometry, stored by
+//! It also edits the asset's settings (virtual geometry and its fallback's
+//! error bound, stored by
 //! `meshes_component::mesh_cache::set_asset_settings`), which a
 //! `StaticMeshComponent` copies when it is placed for the mesh and then keeps
 //! as its own per-instance properties.
@@ -338,6 +339,33 @@ impl AssetViewerPanel {
         cx.notify();
     }
 
+    /// Step the asset's virtual-geometry fallback error bound through
+    /// [`FALLBACK_ERRORS`] by `step` and save it into the `.mesh`. Unlike the
+    /// switch, it drives the placed meshes: their fallback is cut again.
+    fn step_fallback_error(&mut self, step: isize, cx: &mut Context<Self>) {
+        let (Some(path), Some(materials)) =
+            (self.current_path.as_ref(), self.mesh_materials.as_mut())
+        else {
+            return;
+        };
+        let current = fallback_error_index(materials.settings.vg_fallback_error);
+        let next = current
+            .saturating_add_signed(step)
+            .min(FALLBACK_ERRORS.len() - 1);
+        if next == current {
+            return;
+        }
+        let settings = meshes_component::mesh_cache::MeshAssetSettings {
+            vg_fallback_error: FALLBACK_ERRORS[next],
+            ..materials.settings
+        };
+        match meshes_component::mesh_cache::set_asset_settings(path, settings) {
+            Ok(()) => materials.settings = settings,
+            Err(error) => log::error!("Could not save mesh settings for {:?}: {error}", path),
+        }
+        cx.notify();
+    }
+
     /// Persist the assignments into the `.mesh`; placed meshes are told to
     /// reload by `set_default_materials`' asset-update event.
     fn save_mesh_materials(&self) {
@@ -384,15 +412,71 @@ fn file_label(path: &str, empty: &str) -> String {
         .to_owned()
 }
 
+/// The fallback error bounds the mesh viewer offers, as fractions of the
+/// mesh's bounding radius; `None` takes the project's
+/// (`project.virtual_geometry.fallback_relative_error`).
+const FALLBACK_ERRORS: [Option<f32>; 8] = [
+    None,
+    Some(0.001),
+    Some(0.0025),
+    Some(0.005),
+    Some(0.01),
+    Some(0.02),
+    Some(0.05),
+    Some(0.1),
+];
+
+/// The offered bound nearest `error`.
+fn fallback_error_index(error: Option<f32>) -> usize {
+    let Some(error) = error else {
+        return 0;
+    };
+    (1..FALLBACK_ERRORS.len())
+        .min_by(|&a, &b| {
+            let distance = |i: usize| (FALLBACK_ERRORS[i].unwrap_or(0.0) - error).abs();
+            distance(a).total_cmp(&distance(b))
+        })
+        .unwrap_or(0)
+}
+
 /// The "Mesh Settings" section of the properties panel: the asset-level
-/// defaults placed meshes are seeded from. `None` for non-`.mesh` files.
+/// defaults placed meshes are seeded from, and the error bound of the
+/// mesh's virtual-geometry fallback. `None` for non-`.mesh` files.
 pub fn settings_section(cx: &App, panel: &Entity<AssetViewerPanel>) -> Option<AnyElement> {
     use rust_i18n::t;
+    use ui::button::{Button, ButtonVariants as _};
     use ui::switch::Switch;
-    use ui::{h_flex, v_flex, ActiveTheme};
+    use ui::{h_flex, v_flex, ActiveTheme, Sizable};
 
     let materials = panel.read(cx).mesh_materials.as_ref()?;
     let muted = cx.theme().muted_foreground;
+    let fallback_error = match materials.settings.vg_fallback_error {
+        None => t!("AssetViewer.VgFallbackErrorProject").to_string(),
+        Some(error) => format!("{:.2} %", error * 100.0),
+    };
+    let step = |id: &'static str, label: &'static str, delta: isize, panel: Entity<AssetViewerPanel>| {
+        Button::new(id)
+            .label(label)
+            .small()
+            .ghost()
+            .on_click(move |_, _, cx| {
+                panel.update(cx, |panel, cx| panel.step_fallback_error(delta, cx));
+            })
+    };
+    let fallback_row = h_flex()
+        .w_full()
+        .justify_between()
+        .items_center()
+        .gap_2()
+        .child(div().text_xs().child(t!("AssetViewer.VgFallbackError").to_string()))
+        .child(
+            h_flex()
+                .items_center()
+                .gap_1()
+                .child(step("mesh-vg-fallback-finer", "<", -1, panel.clone()))
+                .child(div().text_xs().child(fallback_error))
+                .child(step("mesh-vg-fallback-coarser", ">", 1, panel.clone())),
+        );
     let panel = panel.clone();
     Some(
         v_flex()
@@ -430,6 +514,13 @@ pub fn settings_section(cx: &App, panel: &Entity<AssetViewerPanel>) -> Option<An
                     .text_xs()
                     .text_color(muted)
                     .child(t!("AssetViewer.VirtualGeometryHint").to_string()),
+            )
+            .child(fallback_row)
+            .child(
+                div()
+                    .text_xs()
+                    .text_color(muted)
+                    .child(t!("AssetViewer.VgFallbackErrorHint").to_string()),
             )
             .into_any_element(),
     )
