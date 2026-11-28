@@ -1289,9 +1289,9 @@ impl AssetViewerPanel {
             }
             verts.extend(unpack(v.normal));
             verts.extend(v.tex_coords0);
-            verts.extend(v.tex_coords1);
+            verts.extend(v.lightmap_uv());
             verts.extend(unpack(v.tangent));
-            verts.push(v.bitangent_sign);
+            verts.push(v.bitangent_sign());
         }
 
         let triangles = (asset.geometry.indices.len() / 3) as u32;
